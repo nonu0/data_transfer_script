@@ -1,33 +1,62 @@
 import pyodbc
-import time
 import requests
-import json
+import time
 from datetime import datetime
+import json
 
 # Define the SQLite connection details
 database = 'AdventureWorks2022'  # Replace with the path or name of your SQLite database file
-tables = 'Person.Person'  # Replace with the name of your table in SQLite
+tables = 'Person.PersonPhone'  # Replace with the name of your table in SQLite
 server = 'localhost,1433'
 username = 'sa'
 password = 'yourStrong(!)Password'  # Replace with the same password you used when starting the container
-tables_per_cycle = 5
+column_id = 'BusinessEntityID'  # Replace with the id column of your table in SQLite
 
+
+# Define the Swagger API base URL and endpoint for importing users
+swagger_base_url = 'https://eguarantorship-api.presta.co.ke/'  
+import_users_endpoint = '/api/v1/members'  
 
 # Define the SQL query to fetch data from the table
-query_template = 'SELECT * FROM {}'
+first_query_template = 'SELECT * FROM {}'
+query_template = 'SELECT * FROM {} WHERE {} > ? ORDER BY {}'
 
-# API base url and end point
-swagger_base_url = 'https://eguarantorship-api.presta.co.ke/api/v1/'
-import_users_endpoint = 'Import/Users'
+# Function to fetch member data from the MSSQL database starting from the last fetched record
+def fetch_member_data(last_fetched_record):
+    try:
+        
+        # Connect to the MSSQL database
+        connection = pyodbc.connect(f'DRIVER=SQL Server;SERVER={server};DATABASE={database};UID={username};PWD={password}')
+        cursor = connection.cursor()
 
-# get current date and time
-current_time = time.time()
+        query = query_template.format(tables,column_id,column_id) 
 
-# calculate next run time,set to run once every 24 hours
-next_run_time = current_time + 24 * 60 *60
+        if last_fetched_record is None:
+            query = first_query_template.format(tables)
+            cursor.execute(query)
+        else:
+            # Fetch rows from the table starting from the last fetched record
+            cursor.execute(query, last_fetched_record)
 
-# keep track of last fetched data
-last_fetched_index = 0
+        # Fetch all rows from the table
+        rows = cursor.fetchall()
+
+        # Get column names from cursor description
+        columns = [column[0] for column in cursor.description]
+
+        # Convert rows to dictionaries
+        data = []
+        for row in rows:
+            data.append(dict(zip(columns, row)))
+
+        # Close the cursor and the database connection
+        cursor.close()
+        connection.close()
+
+        return data
+    except Exception as e:
+        print(f"Error fetching data from MSSQL: {str(e)}")
+        return None
 
 class CustomEncoder(json.JSONEncoder):
     # convert datetime to json acceptable format i.e iso
@@ -36,73 +65,56 @@ class CustomEncoder(json.JSONEncoder):
             return obj.isoformat()
         return super().default(obj)
 
-def fetch_data():
-    global next_run_time,last_fetched_index
-
-    # calculate end index for current cycle
-    end_index = last_fetched_index + tables_per_cycle
-
-    # Establish the connection to the SQLite database
-    connection = pyodbc.connect('DRIVER={SQL Server};SERVER=' + server + ';DATABASE=' + database + 
-                                ';UID=' + username + ';PWD=' + password)
     
-    cursor =  connection.cursor()
-
-    # list to store fetched data
-    fetched_data = []
-
-    
-
-    query = query_template.format(tables)
-    cursor.execute(query)
-
-    for row in cursor:
-        # Convert the row to a dictionary
-        row_dict = dict(zip([column[0] for column in cursor.description], row))
-        fetched_data.append(row_dict)
-        # fetched_data.append(row)
-
-        current_cycle_tables = fetched_data[last_fetched_index:end_index]
-        # print(current_cycle_tables)
-
-    # increment the last fetched index for the next cycle
-    last_fetched_index += tables_per_cycle
-
-    # reset last_fetched_index if it exceeds length of table
-    if last_fetched_index >= len(fetched_data):
-        last_fetched_index = 0
-
-    return current_cycle_tables
-    
-    cursor.close()
-    connection.close()
-
-def transfer_data(data):
+# Function to transfer member data to the Import Users API
+def transfer_member_data(data):
     try:
-        encoded_data = json.dumps(data, cls=CustomEncoder)
-        response = requests.post(f'{swagger_base_url}{import_users_endpoint}',json=encoded_data)
-        response.raise_for_status()
-        print("Data transfered  successfully")
+        mapped_data = []
+        for record in data:
+            details = {}
+            for key, value in record.items():
+                if key not in ["id", "created", "created_by", "updated", "updated_by", "first_name",
+                               "full_name", "last_name", "member_number", "phone_number", "total_shares",
+                               "total_deposits", "committed_amount", "available_amount", "member_status",
+                               "middle_name"]:
+                    details[key] = {
+                        "value": value,
+                        "type": "TEXT"
+                    }
+
+            mapped_record = {
+                "isTermsAccepted": False,
+                "refId": record["BusinessEntityID"],
+                "details": details
+            }
+            mapped_data.append(mapped_record)
+
+            encoded_data = json.dumps(mapped_data, cls=CustomEncoder)
+        # response = requests.post(f'{swagger_base_url}{import_users_endpoint}', json=encoded_data)
+        # response.raise_for_status()
+        print("Data transferred to the Import Users API successfully.")
         return True
+    
     except requests.exceptions.RequestException as e:
-        print(f'Error while transferring data to import user API: {str(e)}')
+        print(f"Error transferring data to the Import Users API: {str(e)}")
         return False
 
-
-
-def is_time_to_run():
-    global next_run_time
-    return time.time() >= next_run_time
-
 if __name__ == "__main__":
+    last_fetched_record = None  # Initialize the last fetched record
+    
     while True:
-        if is_time_to_run():
-            data = fetch_data()
-            # if data is fetched successfully transfer the data to end point
-            if data:
-                transfer_data(data)
+        # Fetch member data from the MSSQL database starting from the last fetched record
+        member_data = fetch_member_data(last_fetched_record)
 
-            next_run_time = time.time() + 24 * 60 * 60
-            print(next_run_time)
+        # If data is fetched successfully, transfer it to the Import Users API
+        if member_data:
+            if transfer_member_data(member_data):
+                # Get the last fetched record from the fetched data
+                last_fetched_record = member_data[-1][column_id]
+                print(last_fetched_record)
+            
+                time.sleep(86400)  # Sleep for 24 hours (86400 seconds)before fetching and transferring data again
 
-        time.sleep(86400) # sleep for 24 hours before calling the function again
+        # If no data is fetched, sleep for a shorter interval before retrying
+        else:
+            time.sleep(300)  # Sleep for 5 minutes before retrying
