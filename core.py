@@ -4,20 +4,18 @@ import time
 from datetime import datetime
 import json
 
-# Define the SQLite connection details
-database = 'AdventureWorks2022'  # Replace with the path or name of your SQLite database file
-table = 'Person.Person'  # Replace with the name of your table in SQLite
-server = 'localhost,1433'
-username = 'sa'
-password = 'yourStrong(!)Password'  # Replace with the same password you used when starting the container
-column_id = 'BusinessEntityID'  # Replace with the id column of your table in SQLite
-
+# Define the MSSQL database connection details
+database = 'YourDatabaseName'  # Replace with the name of your MSSQL database
+table = 'Wanaanga.dbo.Customer'  # Replace with the name of your table
+server = 'localhost,1433'  # Replace with your server details
+username = 'sa'  # Replace with your username
+password = 'YourPassword'  # Replace with your password
 
 # Define the Swagger API base URL and endpoint for importing users
-swagger_base_url = 'https://eguarantorship-api.presta.co.ke/'  
-import_users_endpoint = '/api/v1/members'  
+swagger_base_url = 'https://eguarantorship-api.presta.co.ke/'
+import_users_endpoint = '/api/v1/members'
 
-# # Define the columns to fetch from the database
+# Define the columns to fetch from the database
 columns_to_fetch = [
     'acno', 'fname', 'mname', 'lname', 'address', 'city', 'savings', 'idno', 'personalno', 'Saccomno', 'entrydate',
     'Telephone', 'sex', 'Mandate', 'Employer', 'PhotoPath', 'SignPath', 'officer', 'Photo', 'signature', 'SectorCode',
@@ -25,7 +23,6 @@ columns_to_fetch = [
     'FrontIDPhoto', 'BackIDPhoto', 'Membertype', 'Mobile', 'ROfficerOther', 'ROfficer', 'YearOfBirth', 'stationcode',
     'MobileBankingCust', 'MobileBankingCurrAc', 'Pin_No', 'Closure', 'Email', 'KRA_PIN'
 ]
-
 
 # Define the request body for the Swagger API
 request_body = {
@@ -69,7 +66,7 @@ request_body = {
 
 
 # Function to fetch member data from the MSSQL database
-def fetch_member_data(last_fetched_record):
+def fetch_member_data():
     try:
         connection = pyodbc.connect(f'DRIVER=SQL Server;SERVER={server};DATABASE={database};UID={username};PWD={password}')
         cursor = connection.cursor()
@@ -113,8 +110,8 @@ def transfer_member_data(data):
                 "lastName": record["lname"],
                 "idNumber": record["idno"],
                 "memberNumber": "",  # Provide the appropriate value
-                "phoneNumber": record["phone_number"],
-                "email": record["email"],
+                "phoneNumber": record["Telephone"],
+                "email": record["Email"],
                 "totalShares": 0,
                 "totalDeposits": 0,
                 "committedAmount": 0,
@@ -130,11 +127,9 @@ def transfer_member_data(data):
         request_body["imported"] = mapped_data
         encoded_data = json.dumps(request_body, indent=2)
 
-        print(encoded_data)  # Print the encoded data for testing purposes
-
         # Send the encoded data to the Import Users API
-        response = requests.post(f'{swagger_base_url}{import_users_endpoint}', json=encoded_data)
-        response.raise_for_status()
+        # response = requests.post(f'{swagger_base_url}{import_users_endpoint}', json=encoded_data)
+        # response.raise_for_status()
         print("Data transferred to the Import Users API successfully.")
         return True
     except requests.exceptions.RequestException as e:
@@ -142,22 +137,12 @@ def transfer_member_data(data):
         return False
 
 
-
 if __name__ == "__main__":
-    last_fetched_record = None  # Initialize the last fetched record
-    
     while True:
-        # Fetch member data from the MSSQL database starting from the last fetched record
-        member_data = fetch_member_data(last_fetched_record)
+        member_data = fetch_member_data()
 
-        # If data is fetched successfully, transfer it to the Import Users API
         if member_data:
             if transfer_member_data(member_data):
-                # Get the last fetched record from the fetched data
-                last_fetched_record = member_data[-1][column_id]
-
-                time.sleep(30)  # Sleep for 24 hours (86400 seconds)before fetching and transferring data again
-
-        # If no data is fetched, sleep for a shorter interval before retrying
+                time.sleep(86400)  # Sleep for 24 hours (86400 seconds) before fetching and transferring data again
         else:
-            time.sleep(10)  # Sleep for 5 minutes before retrying
+            time.sleep(300)  # Sleep for 5 minutes before retrying
