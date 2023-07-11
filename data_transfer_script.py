@@ -5,12 +5,12 @@ from datetime import datetime
 import json
 
 # Define the SQLite connection details
-database = 'AdventureWorks2022'  # Replace with the path or name of your SQLite database file
-table = 'Person.Person'  # Replace with the name of your table in SQLite
+database = 'db_name'  # Replace with the path or name of your SQLite database file
+table = 'Wanaanga.dbo.Customer'  # the name of your table in SQLite
 server = 'localhost,1433'
 username = 'sa'
 password = 'yourStrong(!)Password'  # Replace with the same password you used when starting the container
-column_id = 'BusinessEntityID'  # Replace with the id column of your table in SQLite
+column_id = 'acno'  # the id column of your table in SQLite
 
 
 # Define the Swagger API base URL and endpoint for importing users
@@ -23,9 +23,18 @@ columns_to_fetch = [
     'Telephone', 'sex', 'Mandate', 'Employer', 'PhotoPath', 'SignPath', 'officer', 'Photo', 'signature', 'SectorCode',
     'RegionCode', 'Station', 'Occupation', 'YearBirth', 'PhysicalLoc', 'mtype', 'Deleted', 'Earmark', 'TELEXT', 'Remarks',
     'FrontIDPhoto', 'BackIDPhoto', 'Membertype', 'Mobile', 'ROfficerOther', 'ROfficer', 'YearOfBirth', 'stationcode',
-    'MobileBankingCust', 'MobileBankingCurrAc', 'Pin_No', 'Closure', 'Email', 'KRA_PIN'
-]
+    'MobileBankingCust', 'MobileBankingCurrAc', 'Pin_No', 'Closure', 'Email', 'KRA_PIN']
 
+# Define the mappings for the columns
+column_mappings = {
+    'acno':'memberNumber',
+    'fname':'firstName',
+    'lname':'lastName',
+    'idno':'idNumber',
+    'Telephone':'phoneNumber',
+    'Pin_No':'pinSecret',
+    'Email':'email'
+    }
 
 # Define the request body for the Swagger API
 request_body = {
@@ -44,22 +53,10 @@ request_body = {
             "availableAmount": 0,
             "memberStatus": "ACTIVE",
             "loanCount": 0,
-            "details": {
-                "additionalProp1": {
-                    "value": "string",
-                    "type": "BOOLEAN"
-                },
-                "additionalProp2": {
-                    "value": "string",
-                    "type": "BOOLEAN"
-                },
-                "additionalProp3": {
-                    "value": "string",
-                    "type": "BOOLEAN"
-                }
-            },
             "isTermsAccepted": True,
-            "fullName": "string"
+            "fullName": "string",
+            "details": {},
+
         }
     ],
     "failed": [],
@@ -67,9 +64,8 @@ request_body = {
     "rowsFailed": 0
 }
 
-
 # Function to fetch member data from the MSSQL database
-def fetch_member_data(last_fetched_record):
+def fetch_member_data(data):
     try:
         connection = pyodbc.connect(f'DRIVER=SQL Server;SERVER={server};DATABASE={database};UID={username};PWD={password}')
         cursor = connection.cursor()
@@ -89,59 +85,51 @@ def fetch_member_data(last_fetched_record):
         connection.close()
 
         return data
+    
     except Exception as e:
         print(f"Error fetching data from MSSQL: {str(e)}")
         return None
+    
 
-
+class CustomEncoder(json.JSONEncoder):
+    # convert datetime to json acceptable format i.e iso
+    def default(self, obj):
+        if isinstance(obj, datetime):
+            return obj.isoformat()
+        return super().default(obj)
+    
+    
 # Function to transfer member data to the Import Users API
 def transfer_member_data(data):
     try:
         mapped_data = []
         for record in data:
             details = {}
-            for key, value in record.items():
-                if key not in columns_to_fetch:
-                    details[key] = {
+            mapped_record = request_body["imported"][0].copy()
+            for column, value in record.items():
+                if column in column_mappings:
+                    mapped_record[column_mappings[column]] = value
+                else:
+                    details[column] = {
                         "value": value,
                         "type": "TEXT"
                     }
-
-            mapped_record = {
-                "firstName": record["fname"],
-                "pinSecret": "",  # Provide the appropriate value
-                "lastName": record["lname"],
-                "idNumber": record["idno"],
-                "memberNumber": "",  # Provide the appropriate value
-                "phoneNumber": record["phone_number"],
-                "email": record["email"],
-                "totalShares": 0,
-                "totalDeposits": 0,
-                "committedAmount": 0,
-                "availableAmount": 0,
-                "memberStatus": "ACTIVE",
-                "loanCount": 0,
-                "details": details,
-                "isTermsAccepted": True,
-                "fullName": f"{record['fname']} {record['lname']}"
-            }
+            mapped_record["details"] = details
             mapped_data.append(mapped_record)
 
         request_body["imported"] = mapped_data
-        encoded_data = json.dumps(request_body, indent=2)
+        encoded_data = json.dumps(request_body, cls=CustomEncoder, indent=2)
 
-        print(encoded_data)  # Print the encoded data for testing purposes
 
         # Send the encoded data to the Import Users API
         response = requests.post(f'{swagger_base_url}{import_users_endpoint}', json=encoded_data)
         response.raise_for_status()
         print("Data transferred to the Import Users API successfully.")
         return True
+    
     except requests.exceptions.RequestException as e:
         print(f"Error transferring data to the Import Users API: {str(e)}")
         return False
-
-
 
 if __name__ == "__main__":
     last_fetched_record = None  # Initialize the last fetched record
@@ -156,8 +144,8 @@ if __name__ == "__main__":
                 # Get the last fetched record from the fetched data
                 last_fetched_record = member_data[-1][column_id]
 
-                time.sleep(30)  # Sleep for 24 hours (86400 seconds)before fetching and transferring data again
+                time.sleep(86400)  # Sleep for 24 hours (86400 seconds)before fetching and transferring data again
 
         # If no data is fetched, sleep for a shorter interval before retrying
         else:
-            time.sleep(10)  # Sleep for 5 minutes before retrying
+            time.sleep(300)  # Sleep for 5 minutes before retrying
