@@ -13,7 +13,7 @@ server = 'localhost,1433'
 username = 'sa'
 password = 'yourStrong(!)Password'  # Replace with the same password you used when starting the container
 column_id = 'acno'  # the id column of your table in SQLite
-telephone = '0726412393'
+telephone = '1001'
 
 
 # Define the Swagger API base URL and endpoint for importing users
@@ -21,9 +21,17 @@ swagger_base_url = 'https://eguarantorship-api.presta.co.ke/'
 import_users_endpoint = '/api/v1/members'  
 
 # # Define the columns to fetch from the database
-columns_to_fetch = [
-    'acno', 'fname', 'Telephone', 'lname',]
+# columns_to_fetch = [
+#     'acno', 'fname', 'mname', 'lname', 'address', 'city', 'idno', 'personalno', 'entrydate',
+#     'Telephone', 'sex', 'Mandate', 'Employer', 'PhotoPath', 'SignPath', 'officer', 'Photo', 'signature', 'SectorCode',
+#     'RegionCode', 'Station', 'Occupation', 'YearBirth', 'PhysicalLoc', 'mtype', 'Deleted', 'Earmark', 'TELEXT', 'Remarks',
+#     'FrontIDPhoto', 'BackIDPhoto', 'Membertype', 'Mobile', 'ROfficerOther', 'ROfficer', 'YearOfBirth', 'stationcode',
+#     'MobileBankingCust', 'MobileBankingCurrAc', 'Pin_No', 'Closure', 'Email', 'KRA_PIN'
+# ]
 
+columns_to_fetch = [
+    'acno', 'fname', 'lname', 'idno',
+]
 # Define the mappings for the columns
 column_mappings = {
     'acno': 'memberNumber',
@@ -85,7 +93,7 @@ def fetch_member_data(start_index, batch_size):
                 record['acno'] = memberNumber
 
                 # Fetch balances data from the balances table for the same customer
-                balances_query = f"SELECT * FROM {balances_table} WHERE acno LIKE 'S01-%{acno_parts[1]}%' OR acno LIKE 'S02-%{acno_parts[1]}%'"
+                # balances_query = f"SELECT * FROM {balances_table} WHERE acno LIKE 'S01-%{acno_parts[1]}%' OR acno LIKE 'S02-%{acno_parts[1]}%'"
 
                 cursor.execute(balances_query)
                 balances_rows = cursor.fetchall()
@@ -177,13 +185,13 @@ if __name__ == "__main__":
         member_data = fetch_member_data(last_fetched_record, batch_size)
 
         # If data is fetched successfully, transfer it to the Import Users API
-        # if member_data:
-        #     if transfer_member_data(member_data):
-        #         # Get the last fetched record from the fetched data
-        #         last_fetched_record = member_data[-1][column_id]
+        if member_data:
+            if transfer_member_data(member_data):
+                # Get the last fetched record from the fetched data
+                last_fetched_record = member_data[-1][column_id]
 
-        time.sleep(86400)  # Sleep for 24 hours (86400 seconds) before fetching and transferring data again
+                time.sleep(86400)  # Sleep for 24 hours (86400 seconds) before fetching and transferring data again
 
-# If no data is fetched, sleep for a shorter interval before retrying
-else:
-    time.sleep(300)  # Sleep for 5 minutes before retrying
+        # If no data is fetched, sleep for a shorter interval before retrying
+        else:
+            time.sleep(300)  # Sleep for 5 minutes before retrying
