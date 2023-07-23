@@ -6,10 +6,10 @@ import json
 import math
 
 # Define the SQLite connection details
-database = 'test'  # Replace with the path or name of your SQLite database file
-table = 'test.dbo.Table_1'  # the name of your table in SQLite
+database = 'Wanaanga'  # Replace with the path or name of your SQLite database file
+table = 'Wanaanga.dbo.Customer'  # the name of your table in SQLite
 server = 'localhost,1433'
-balances_table = 'test.dbo.Table_2'
+balances_table = 'Wanaanga.dbo.Balances'
 username = 'sa'
 password = 'yourStrong(!)Password'  # Replace with the same password you used when starting the container
 column_id = 'acno'  # the id column of your table in SQLite
@@ -72,7 +72,7 @@ def fetch_member_data(start_index,batch_size):
         cursor = connection.cursor()
 
         columns_str = ', '.join(columns_to_fetch)
-        query = f"SELECT {', '.join(columns_to_fetch)} FROM {table} ORDER BY {column_id} OFFSET {start_index} ROWS FETCH NEXT {batch_size} ROWS ONLY"
+        query = f"SELECT {', '.join(columns_to_fetch)} FROM {table} WHERE Telephone='{telephone}  ORDER BY {column_id} OFFSET {start_index} ROWS FETCH NEXT {batch_size} ROWS ONLY"
 
         cursor.execute(query)
         rows = cursor.fetchall()
